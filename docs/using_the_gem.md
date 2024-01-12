@@ -20,12 +20,6 @@
 
 ## Using the gem
 
-Require the gem in the rails console
-
-```
-require "jisc_publications_router"
-```
-
 **Configure the gem**
 
 The [configuration guide](#gem-configuration-options) provides detailed instructions on the various available configurations.
@@ -47,12 +41,35 @@ JiscPublicationsRouter.configure do |config|
 end
 ```
 
+### In ruby code / from the console
+
+Require the gem in the rails console
+
+```
+require "jisc_publications_router"
+```
+
+Check the configuration options supplied in the initializer are registered
+
+```
+JiscPublicationsRouter.configuration
+```
+
 **Get list of notifications**
 
 ```
 nl = JiscPublicationsRouter::V4::NotificationsList.new
 response_body, notification_ids, since_id = nl.get_notifications_list(since: "2023-01-01", save_response: true)
 ```
+
+This method gets one page of notifications. The default page size in the JISC publications router api is 25 (maximum is 100).
+
+Each notification is looped over, and the following actions are performed
+
+* Metadata is saved to disk
+* The list of contents are extracted into a file called `content_links.json`
+* The contents to be retrieved are added to a `notification_content` queue
+* After the contents have been successfully fetched, the `notification id` and `notification path` is added to the `notification` queue, as explained in the workers below.
 
 **Get list of all notifications**
 
@@ -61,12 +78,26 @@ nl = JiscPublicationsRouter::V4::NotificationsList.new
 all_notification_ids = nl.get_all_notifications(save_response: true)
 ```
 
+This method calls `Get list of notifications` recursively
+
+* Starting from the last id retrieved in the previous run or from "1970-01-01"
+* It retrieves either all notifications or a maximum of 10,000 calls are made (25 per page - 250,000 notifications are retrieved).
+
 **Get notification**
 
 ```
 n = JiscPublicationsRouter::V4::Notification.new
-response_body = n.get_notification('1494732', save_notification: true, save_response: true)
+response_body = n.get_notification('1494732')
 ```
+
+This method is used to get the notification for one particular id. 
+
+After the notification metadata is retrieved, the following actions are perfromed
+
+* Metadata is saved to disk
+* The list of contents are extracted into a file called `content_links.json`
+* The contents to be retrieved are added to a `notification_content` queue
+* After the contents have been successfully fetched, the `notification id` and `notification path` is added to the `notification` queue, as explained in the workers below.
 
 **To check Sidekiq queue**
 
@@ -79,10 +110,34 @@ q.each do |job|
 end
 ```
 
+### From the rake task
+
+**Get list of all notifications**
+
+The rake task is used to get all notifications since the last run. It calls `get all notifications` described above.
+
+You will need to add an initializer in your rails application to configure the JISC publications router client before calling the rake task.
+
+```
+rake 'jisc_publications_router:get_all_notifications
+```
+
+If you also want the responses saved in the notifications directory, use the argument `--save_response` or `--sr` .  This argument is optional.
+
+```
+rake 'jisc_publications_router:get_all_notifications -- --save_response'
+```
+or
+```
+rake 'jisc_publications_router:get_all_notifications -- --sr'
+```
+
+
 ## Gem configuration options
+
 `client_id` : 
 
-* The client_id for the JISC publications router api to get list of notifications mtching matching notifications
+* The client_id for the JISC publications router API to get list of matching notifications
 * Required
 
 `api_key` : 
@@ -155,27 +210,6 @@ end
 * The number of times to retry to attempt to retrieve a list of notifications
 * Optional. The default value is `3`
 
-`notifications_store_adapter` :
-
-* The adapter to be used to work on each notification. 
-
-* Optional. The default value is `"file"`. The options are `"file"` and `"sidekiq"`
-
-* If file is chosen, each notification will be saved to disk in the notification directory
-
-* If sidekiq is chosen, the notification metadata will be added to the notification worker
-
-  ```
-  JiscPublicationsRouter::Worker::NotificationWorker.
-              perform_async(notification.to_json)
-  ```
-
-  You can override this worker in your application, based on how you would like to handle the data for each notification, and the actions you would like performed. 
-
-* Note: the queue is only for working with each notification. The worker 
-
-  Each content link to be retrieved is saved in a queueThe contents will be retreived and saved to disk, with either 
-
 `preferred_packaging_format` :
 
 * The preferred packaging format for downloading content. 
@@ -184,26 +218,34 @@ end
 
 `retrieve_unpackaged` : 
 
-* parameter to indicate if unpackaged content files are to be retrieved from JISC publications router
+* Parameter to indicate if unpackaged content files are to be retrieved from JISC publications router
 * Optional. The default value is `false`. 
 * If set to true the unpackaged pdf files and unpakaged other files will be downloaded and saved in the notification directory.
 
+`retrieve_content` :
+
+* Parameter to indicate if the content files need to be downloaded.
+* Optional. The default value is `false`. 
+* If set to true 
+  * The contents to be retrieved are added to a `notification_content` queue
+  * After the contents have been successfully fetched, the `notification id` and `notification path` is added to the `notification` queue, as explained in the workers below.
+
+`log_file` :
+
+* Parameter to pass the name of the log file along with the path. 
+* Optional. The default value is `log/jisc_publications_router.log`. 
+
+`redis_url` :
+
+* Parameter to pass the URL for redis.
+* Optional. The default value is read from the environment variable `REDIS_URL`. If this is not set, the URL will default to `redis://localhost:6379/0`
+
+`redis_password` :
+
+* Parameter to pass the password for redis, if used.
+* Optional. The default value is read from the environment variable `REDIS_PASSWORD`. If this is not set, it will default to an empty string.
+
 ## Workers used by the gem
-
-### Notification worker
-
-The notification worker (`JiscPublicationsRouter::Worker::NotificationWorker`) will receive the data for each notification, from the notification list, if sidekiq is chosen as the notifications_store_adapter.  
-
-* The worker is configured to use the `notification` queue in Redis.
-
-
-* The gem provides just the boiler plate for the Worker class
-
-  ```
-  def perform(json_notification); end
-  ```
-
-  You can override this worker in your application, based on how you would like to handle the data for each notification, and the actions you would like performed. 
 
 ### Notification content worker
 
@@ -220,3 +262,22 @@ For each notification retrieved from the JISC publications router API, (using ei
 * The worker is configured to use the `notification_content` queue in Redis.
 
 * The `NotificationContentWorker` will download the content and save it to the notifications directory. You can override this worker in your application, based on how you would like to handle the list of content for each notification, and the actions you would like performed. 
+
+* Once successful, the notification is added to the `notification` queue in Redis.
+
+### Notification worker
+
+The notification worker (`JiscPublicationsRouter::Worker::NotificationWorker`) will receive the data for each notification, from the notification list, after the contents have been downloaded successfully.  
+
+* The worker is configured to use the `notification` queue in Redis.
+
+
+* The gem provides just the boiler plate for the Worker class
+
+  ```
+  def perform(json_notification); end
+  ```
+
+  You can override this worker in your application, based on how you would like to handle the data for each notification, and the actions you would like performed. 
+
+### 
