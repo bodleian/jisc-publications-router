@@ -36,9 +36,13 @@ module JiscPublicationsRouter
 
         def _save_content_links(notification)
           content_links = _notification_content_links(notification)
-          return if content_links.size > 0
-          JiscPublicationsRouter.logger.debug("Notification #{notification['id']}: Saving content link")
-          notification_path = _notification_path(notification['id'])
+          return if content_links.size == 0
+          _write_content_links_to_file(notification['id'], content_links)
+        end
+
+        def _write_content_links_to_file(notification_id, content_links)
+          JiscPublicationsRouter.logger.debug("Notification #{notification_id}: saving content link")
+          notification_path = _notification_path(notification_id)
           # create directory
           FileUtils.mkdir_p(notification_path) unless File.directory? notification_path
           # save content_links
@@ -166,8 +170,9 @@ module JiscPublicationsRouter
         end
 
         def _queue_content_links(notification)
+          content_links = _notification_content_links(notification)
           JiscPublicationsRouter::Worker::NotificationContentWorker.
-            perform_async(notification)
+            perform_async(notification['id'], content_links)
         end
 
         def _queue_notification(notification_id)
