@@ -41,12 +41,6 @@ module JiscPublicationsRouter
         current_time = Time.now.strftime("%Y-%m-%d_%H-%M-%S")
         _save_json(File.join(file_path, "#{current_time}.json"), response_body)
       end
-
-      def _save_json(file_path, response_body)
-        File.open(file_path, "w") do |f|
-          f << JSON.pretty_generate(response_body)
-        end
-      end
     end
   end
 end
