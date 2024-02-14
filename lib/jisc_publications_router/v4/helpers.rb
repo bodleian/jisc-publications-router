@@ -10,6 +10,7 @@ module JiscPublicationsRouter
       include NotificationListHelper
       include NotificationHelper
       include ContentHelper
+      include DataCsvHelper
 
       private
 
