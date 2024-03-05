@@ -10,26 +10,28 @@ module JiscPublicationsRouter
         private
 
         def csv_headers
-          %w[id identifier_doi identifier_issn identifier_eissn title type
-            subject license_title license_url publication_status acceptance_date
-            publication_date journal_title file_formats file_urls number_of_files]
+          %w[id type title subject publication_status publication_date license_url license_title language
+             journal_title identifier_eissn identifier_issn identifier_doi article_version acceptance_date
+             number_of_files file_formats file_urls]
         end
 
         def _do_csv_crosswalk(notification)
           csv_hash = {
+            'acceptance_date' => get_accepted_date(notification),
+            'article_version' => get_version(notification),
             'id'=> get_id(notification),
             'identifier_doi' => get_doi(notification),
             'identifier_issn' => get_issn(notification),
             'identifier_eissn' => get_eissn(notification),
-            'title' => get_title(notification),
-            'type' => get_type(notification),
-            'subject' => get_subject(notification),
+            'journal_title' => get_journal_title(notification),
+            'language' => get_language(notification),
             'license_title' => get_license_title(notification),
             'license_url' => get_license_url(notification),
-            'publication_status' => get_publication_status(notification),
-            'acceptance_date' => get_accepted_date(notification),
             'publication_date' => get_publication_date(notification),
-            'journal_title' => get_journal_title(notification)
+            'publication_status' => get_publication_status(notification),
+            'subject' => get_subject(notification),
+            'title' => get_title(notification),
+            'type' => get_type(notification),
           }
           csv_hash = csv_hash.merge(get_file_info(notification))
           cleanup_and_flatten_hash(csv_hash)
@@ -76,6 +78,10 @@ module JiscPublicationsRouter
           notification.dig('metadata', 'article', 'type')
         end
 
+        def get_language(notification)
+          notification.dig('metadata', 'article', 'language')
+        end
+
         def get_subject(notification)
           notification.dig('metadata', 'article', 'subject')
         end
@@ -117,7 +123,7 @@ module JiscPublicationsRouter
         end
 
         def get_version(notification)
-          notification.dig('metadata', 'version')
+          notification.dig('metadata', 'article', 'version')
         end
 
         def get_file_info(notification)
